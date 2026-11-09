@@ -357,12 +357,14 @@ const AuthHandler = ({
   noAuth,
   path,
 }: IRouteConfig) => {
-  const { credentials, isLoading } = useUserContext();
+  const { credentials, isLoading, authError } = useUserContext();
   const { pathname } = useLocation();
 
   if (isLoading) {
     return <LoadingSpinner />;
   }
+
+  if (!credentials && !noAuth && authError) return null;
 
   if (!credentials && !noAuth) {
     // NOTE: also update LoginLink when changing this

@@ -10,7 +10,10 @@ export class PulpAPI extends BaseAPI {
     super();
 
     this.http.interceptors.request.use((request) => {
-      if (!request.auth) {
+      request.withCredentials = Boolean(config.UI_EXTERNAL_LOGIN_URI);
+      if (config.UI_EXTERNAL_LOGIN_URI) {
+        delete request.auth;
+      } else if (!request.auth) {
         const credentials = JSON.parse(
           window.sessionStorage.credentials ||
             window.localStorage.credentials ||

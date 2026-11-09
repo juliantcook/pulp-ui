@@ -1,4 +1,3 @@
-import Cookies from 'js-cookie';
 import {
   type ReactNode,
   createContext,
@@ -7,10 +6,12 @@ import {
   useState,
 } from 'react';
 import { config } from 'src/ui-config';
+import { endSession, readSession } from './session-auth';
 
 interface IUserContextType {
   credentials: Credentials | null;
   isLoading: boolean;
+  authError: string;
   setCredentials: (
     username: string,
     password: string,
@@ -48,63 +49,46 @@ function cachedCredentials() {
   }
 }
 
-async function getSessionPage() {
-  const response = await fetch(`${config.API_BASE_PATH}users/?limit=1`, {
-    credentials: 'same-origin',
-    headers: { Accept: 'text/html' },
-  });
-
-  if (!response.ok) {
-    return {};
-  }
-
-  const document = new DOMParser().parseFromString(
-    await response.text(),
-    'text/html',
-  );
-
-  return {
-    csrfToken: document.querySelector<HTMLInputElement>(
-      'input[name="csrfmiddlewaretoken"]',
-    )?.value,
-    username: document
-      .querySelector('a.dropdown-toggle[href="#"]')
-      ?.textContent?.trim(),
-  };
-}
-
 export const UserContextProvider = ({ children }: { children: ReactNode }) => {
-  const [credentials, setCredentials] = useState(cachedCredentials());
-  const [isLoading, setIsLoading] = useState(
-    Boolean(config.UI_EXTERNAL_LOGIN_URI && !credentials),
+  const external = Boolean(config.UI_EXTERNAL_LOGIN_URI);
+  const [credentials, setCredentials] = useState<Credentials | null>(() =>
+    external ? null : cachedCredentials(),
   );
+  const [isLoading, setIsLoading] = useState(external);
+  const [authError, setAuthError] = useState('');
 
   useEffect(() => {
-    if (credentials || !config.UI_EXTERNAL_LOGIN_URI) {
+    if (!external) {
       setIsLoading(false);
       return;
     }
 
     let cancelled = false;
+    window.localStorage.removeItem('credentials');
+    window.sessionStorage.removeItem('credentials');
 
     const restoreSession = async () => {
-      // The browsable users endpoint exposes the authenticated Django session
-      // user in its header. It avoids probing an unrelated permission such as
-      // viewing tasks and is also the API backing the user's profile page.
-      const { username } = await getSessionPage();
-
-      if (!cancelled && username) {
-        setCredentials({
-          username,
-          password: '',
-          remember: false,
-          authentication: 'session',
-        });
+      // Use the structured session endpoint without requiring user-list permissions.
+      const user = await readSession(config.API_BASE_PATH);
+      if (!cancelled) {
+        setCredentials(
+          user
+            ? {
+                username: user.username,
+                password: '',
+                remember: false,
+                authentication: 'session',
+              }
+            : null,
+        );
       }
     };
 
     restoreSession()
-      .catch(() => null)
+      .catch(() => {
+        if (!cancelled)
+          setAuthError('Unable to check your sign-in. Please reload the page.');
+      })
       .finally(() => {
         if (!cancelled) {
           setIsLoading(false);
@@ -114,55 +98,44 @@ export const UserContextProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [external]);
 
   useEffect(() => {
-    if (credentials?.authentication === 'session') {
+    if (external || credentials?.authentication === 'session') {
       window.localStorage.removeItem('credentials');
       window.sessionStorage.removeItem('credentials');
     } else if (credentials) {
       window.sessionStorage.credentials = JSON.stringify(credentials);
     }
-    if (credentials?.remember && credentials.authentication !== 'session') {
+    if (
+      !external &&
+      credentials?.remember &&
+      credentials.authentication !== 'session'
+    ) {
       window.localStorage.credentials = JSON.stringify(credentials);
     }
     if (!credentials) {
       window.localStorage.removeItem('credentials');
       window.sessionStorage.removeItem('credentials');
     }
-  }, [credentials]);
+  }, [credentials, external]);
 
   const clearCredentials = async () => {
+    if (!external) {
+      setCredentials(null);
+      return;
+    }
     try {
-      if (credentials?.authentication === 'session') {
-        // Django 5's LogoutView accepts POST only. Prefer the standard CSRF
-        // cookie and fall back to the browsable API form token.
-        const sessionPage = await getSessionPage();
-        const csrfToken = Cookies.get('csrftoken') || sessionPage.csrfToken;
-
-        if (csrfToken) {
-          await fetch('/auth/logout/', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-              'X-CSRFToken': csrfToken,
-            },
-            body: new URLSearchParams({
-              csrfmiddlewaretoken: csrfToken,
-              next: '/ui/status/',
-            }),
-          });
-        }
-      }
-    } finally {
-      // Always clear the local identity, even if the server-side logout is
-      // temporarily unavailable. A remaining server session is revalidated
-      // from its cookie on the next page load.
+      if (external) await endSession(config.API_BASE_PATH);
       window.localStorage.removeItem('credentials');
       window.sessionStorage.removeItem('credentials');
       setCredentials(null);
-      window.location.assign('/ui/status/');
+      setAuthError('');
+      window.location.assign(config.UI_BASE_PATH);
+    } catch {
+      setAuthError(
+        'Unable to sign out. Your session is still active; please try again.',
+      );
     }
   };
 
@@ -171,6 +144,7 @@ export const UserContextProvider = ({ children }: { children: ReactNode }) => {
       value={{
         credentials,
         isLoading,
+        authError,
         setCredentials: (username, password, remember = false) =>
           setCredentials({
             username,

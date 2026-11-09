@@ -1,17 +1,4 @@
-const sessionPage = (username, csrfToken = 'test-csrf-token') => `
-  <html>
-    <body>
-      ${
-        username
-          ? `<a class="dropdown-toggle" href="#">${username}</a>`
-          : '<a href="/auth/login/">Log in</a>'
-      }
-      <form>
-        <input name="csrfmiddlewaretoken" value="${csrfToken}">
-      </form>
-    </body>
-  </html>
-`;
+const sessionPage = (username) => ({ username });
 
 const configureSSO = () => {
   cy.intercept('GET', '/pulp-ui-config.json', {
@@ -25,8 +12,8 @@ const configureSSO = () => {
 describe('Session authentication', () => {
   it('restores an authenticated Django session', () => {
     configureSSO();
-    cy.intercept('GET', '/pulp/api/v3/users/?limit=1', {
-      headers: { 'content-type': 'text/html' },
+    cy.intercept('GET', '/pulp/api/v3/login/', {
+      headers: { 'content-type': 'application/json' },
       body: sessionPage('sso-user'),
     });
 
@@ -44,9 +31,10 @@ describe('Session authentication', () => {
 
   it('does not trust cached session identity', () => {
     configureSSO();
-    cy.intercept('GET', '/pulp/api/v3/users/?limit=1', {
-      headers: { 'content-type': 'text/html' },
-      body: sessionPage(null),
+    cy.intercept('GET', '/pulp/api/v3/login/', {
+      headers: { 'content-type': 'application/json' },
+      statusCode: 403,
+      body: {},
     });
 
     cy.visit('/ui/about/', {
@@ -64,17 +52,18 @@ describe('Session authentication', () => {
     cy.get('[data-cy=pulp-menu-item-Login]').should('exist');
   });
 
-  it('posts the Django logout and clears the local identity', () => {
+  it('deletes the Django session and clears the local identity', () => {
     configureSSO();
     let authenticated = true;
 
-    cy.intercept('GET', '/pulp/api/v3/users/?limit=1', (request) => {
+    cy.intercept('GET', '/pulp/api/v3/login/', (request) => {
       request.reply({
-        headers: { 'content-type': 'text/html' },
-        body: sessionPage(authenticated ? 'sso-user' : null),
+        headers: { 'content-type': 'application/json' },
+        statusCode: authenticated ? 200 : 403,
+        body: authenticated ? sessionPage('sso-user') : {},
       });
     });
-    cy.intercept('POST', '/auth/logout/', (request) => {
+    cy.intercept('DELETE', '/pulp/api/v3/login/', (request) => {
       authenticated = false;
       request.reply({ statusCode: 204 });
     }).as('logout');

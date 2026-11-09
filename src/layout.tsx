@@ -1,5 +1,6 @@
 import { t } from '@lingui/core/macro';
 import {
+  Alert,
   Masthead,
   MastheadBrand,
   MastheadContent,
@@ -86,7 +87,8 @@ const UserDropdown = ({
 
 export const Layout = ({ children }: { children: ReactNode }) => {
   const [aboutModalVisible, setAboutModalVisible] = useState<boolean>(false);
-  const { credentials, clearCredentials, isLoading } = useUserContext();
+  const { credentials, clearCredentials, isLoading, authError } =
+    useUserContext();
 
   const username = credentials?.username;
 
@@ -134,6 +136,7 @@ export const Layout = ({ children }: { children: ReactNode }) => {
 
   return (
     <Page isManagedSidebar header={Header} sidebar={Sidebar}>
+      {authError ? <Alert variant='danger' title={authError} /> : null}
       {children}
       {aboutModalVisible ? (
         <PulpAboutModal

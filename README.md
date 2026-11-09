@@ -112,6 +112,24 @@ A production build (`npm run build`) can be further configured by serving a `/pu
 | `UI_EXTERNAL_LOGIN_URI` | `null`          | Set to something like `/login/` when using SSO                                          |
 | `EXTRA_VERSION`         | `""`            | An extra version string to display in about modal                                       |
 
+### External session authentication
+
+Set `UI_EXTERNAL_LOGIN_URI` to the backend's external login endpoint to use
+cookie-based sessions. Leave it unset to use the built-in HTTP Basic login.
+The UI and API must share an origin. The backend must expose JSON session
+identity at `GET <API_BASE_PATH>login/` and session logout at
+`DELETE <API_BASE_PATH>login/`, with a readable `csrftoken` cookie for CSRF.
+The login endpoint receives a `next` parameter identifying the requested UI
+route and must return the browser to that route after authentication.
+
+External session identities and passwords are not persisted in browser
+storage. Session lookup failures display an error; failed logout preserves the
+signed-in account and access to protected pages so logout can be retried.
+
+Run `npx vitest run src/session-auth.test.ts` to check identity lookup and
+CSRF-protected logout. Cypress session coverage is in
+`cypress/e2e/session-auth.js`.
+
 ## Contributing & Help
 See the [Pulp developer guide](https://pulpproject.org/dev/) to contribute, or reach the community on [Discourse](https://discourse.pulpproject.org) / Matrix ([#pulp](https://matrix.to/#/#pulp:matrix.org), [#pulp-dev](https://matrix.to/#/#pulp-dev:matrix.org))
 

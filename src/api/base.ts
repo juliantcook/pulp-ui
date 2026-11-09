@@ -8,10 +8,9 @@ export class BaseAPI {
 
   constructor() {
     this.http = axios.create({
-      // The fetch adapter avoids the browser's Basic Auth popup. Cookies are
-      // required when the API is authenticated through a Django SSO session.
+      // adapter + withCredentials ensures no popup on http basic auth fail
       adapter: 'fetch',
-      withCredentials: true,
+      withCredentials: false,
 
       // baseURL gets set in PulpAPI
       paramsSerializer: {
